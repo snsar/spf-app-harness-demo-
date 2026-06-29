@@ -1,0 +1,12 @@
+{
+  "name": "gpsr-compliance-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Root package.json so the Shopify CLI detects npm as the package manager (the Go backend + React frontend have their own builds). Without this, `shopify app dev` fails with 'unknown install / ENOENT' because it cannot determine a package manager at the app root.",
+  "scripts": {
+    "shopify": "shopify"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^3.94.3"
+  }
+}

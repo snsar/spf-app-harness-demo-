@@ -1,0 +1,23 @@
+# storefront/extensions/safety-block/shopify.extension.toml
+#
+# Shopify theme app extension — GPSR Safety Block.
+# Managed by the Shopify CLI; `shopify app dev` registers this extension
+# and serves it to a connected development store.
+#
+# The extension reads three app-owned product metafields written by the
+# backend service (shopify_metafield.go) after every classify / override:
+#   product.metafields.app.gpsr_status       (single_line_text_field)
+#   product.metafields.app.gpsr_entity_json  (json)
+#   product.metafields.app.gpsr_warnings_json (json)
+#
+# Metafield DEFINITIONS are declared in the app-root shopify.app.toml —
+# NOT repeated here. This file only declares the extension.
+#
+# API version must match shopify.app.toml [webhooks] api_version.
+api_version = "2026-04"
+uid = "24f1e936-985e-483f-d170-e3790fa787c4007fab01"
+
+[[extensions]]
+name   = "GPSR Safety Block"
+handle = "gpsr-safety-block"
+type   = "theme"

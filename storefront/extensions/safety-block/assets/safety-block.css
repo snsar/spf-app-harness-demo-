@@ -1,0 +1,94 @@
+/*
+ * safety-block.css — GPSR Safety Block storefront styles.
+ *
+ * Scoped to .gpsr-safety-block to avoid bleeding into the surrounding theme.
+ * No JavaScript. No external font or asset loads. No inline styles on elements
+ * that render merchant/metafield text (XSS surface is Liquid-only, not CSS).
+ *
+ * Design goal: clean, legible, theme-neutral. The block uses the browser's
+ * inherited font stack so it inherits the theme's typeface. Spacing uses
+ * relative units (em/rem) to scale with the theme's base font size.
+ *
+ * Merchants who need brand-specific styling can override .gpsr-safety-block*
+ * selectors in their theme's custom CSS.
+ */
+
+/* ── Outer container ─────────────────────────────────────────────────────── */
+.gpsr-safety-block {
+  margin-block: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid #d1d5db;      /* neutral border; not brand-specific */
+  border-radius: 0.375rem;
+  background-color: #f9fafb;
+  font-size: 0.9375rem;           /* ~15 px at 16 px root */
+  line-height: 1.5;
+  color: inherit;                 /* respect the theme's body colour */
+}
+
+/* ── Section heading ──────────────────────────────────────────────────────── */
+.gpsr-safety-block__heading {
+  margin-block-start: 0;
+  margin-block-end: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: inherit;
+}
+
+/* ── Responsible operator section ────────────────────────────────────────── */
+.gpsr-safety-block__entity {
+  margin-block-end: 1rem;
+}
+
+.gpsr-safety-block__entity p {
+  margin-block: 0.125rem;
+}
+
+/* Name is slightly more prominent */
+.gpsr-safety-block__entity-name {
+  font-weight: 600;
+}
+
+.gpsr-safety-block__entity-address {
+  color: #4b5563;
+}
+
+.gpsr-safety-block__entity-role {
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-transform: capitalize;
+}
+
+/* ── Safety warnings list ─────────────────────────────────────────────────── */
+.gpsr-safety-block__warnings {
+  margin-block-start: 0.5rem;
+  margin-block-end: 0;
+  padding-inline-start: 1.25rem;
+}
+
+.gpsr-safety-block__warning {
+  margin-block: 0.25rem;
+  color: #374151;
+}
+
+/* ── Reduced-motion preference ────────────────────────────────────────────── */
+/*
+ * No animations or transitions in this block. This rule is a placeholder so
+ * future contributors know to check prefers-reduced-motion if they add any.
+ */
+
+/* ── High-contrast / forced-colours support ──────────────────────────────── */
+@media (forced-colors: active) {
+  .gpsr-safety-block {
+    border: 1px solid ButtonText;
+    background-color: Canvas;
+    color: CanvasText;
+  }
+}
+
+/* ── Narrow viewport (mobile) ────────────────────────────────────────────── */
+@media (max-width: 39.9375em) {
+  .gpsr-safety-block {
+    padding: 1rem;
+  }
+}

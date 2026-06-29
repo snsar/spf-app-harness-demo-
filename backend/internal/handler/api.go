@@ -10,6 +10,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -60,19 +61,54 @@ type classifier interface {
 	ClearOverride(ctx context.Context, shopID, productID int64) error
 }
 
+// complianceReader loads a single compliance record for a product within a shop.
+// Used by the metafield-sync path after ApplyRuleset commits.
+type complianceReader interface {
+	GetRecord(ctx context.Context, shopID, productID int64) (*model.ComplianceRecord, error)
+}
+
+// shopifyProductIDGetter looks up the Shopify product id (the remote ID stored
+// in the product table) for a local surrogate product id. Used by the
+// metafield-sync path to form the Shopify product GID.
+type shopifyProductIDGetter interface {
+	GetShopifyProductID(ctx context.Context, shopID, productID int64) (int64, error)
+}
+
 // productSyncer pulls products from Shopify for a shop (POST /api/sync).
 type productSyncer interface {
 	SyncProducts(ctx context.Context, shop *model.Shop) (int, error)
 }
 
+// MetafieldWriter is the port for writing GPSR compliance outcomes to Shopify
+// product metafields (app namespace). It is called after every DB commit as a
+// best-effort side-effect: failures are non-fatal (never roll back the DB write).
+// Satisfied by *service.ShopifyMetafieldService (live HTTP) or a test fake.
+//
+// The handler calls this with the resolved entity and warnings it already holds
+// from the classify/override operation. For apply (bulk), the handler reads back
+// the compliance records after the DB commit to resolve entity + warnings.
+type MetafieldWriter interface {
+	WriteComplianceMetafields(
+		ctx context.Context,
+		shopID int64,
+		shopifyProductID int64,
+		status model.Status,
+		entity *model.Entity, // nil for needs_review
+		warnings []string,    // nil/empty for needs_review
+	) error
+}
+
 // APIDeps carries the API handlers' dependencies.
 type APIDeps struct {
-	Products   productLister
-	Entities   entityStore
-	Warnings   warningStore
-	Rules      ruleStore
-	Classifier classifier
-	Sync       productSyncer // optional; /api/sync returns 503 if nil
+	Products        productLister
+	Entities        entityStore
+	Warnings        warningStore
+	Rules           ruleStore
+	Classifier      classifier
+	Sync            productSyncer          // optional; /api/sync returns 503 if nil
+	MetafieldWriter MetafieldWriter        // optional; nil disables metafield sync
+	ComplianceRecs  complianceReader       // optional; needed for apply metafield sync
+	ShopifyProdIDs  shopifyProductIDGetter // optional; needed for apply metafield sync
 }
 
 // RegisterAPIRoutes mounts all shop-scoped REST routes on the (protected) group.
@@ -611,11 +647,83 @@ func (d APIDeps) applyRuleset(c *gin.Context) {
 			return
 		}
 	}
+
+	// DB commit: this is the primary operation. Never fail it due to metafield issues.
 	if err := d.Classifier.ApplyRuleset(c.Request.Context(), sid, ids, rules); err != nil {
 		serverError(c)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"applied": len(ids)})
+
+	// Metafield sync — best-effort after DB commit. Failure is non-fatal: we
+	// return 200 with a warning field so the admin UI can surface it (Q2-A).
+	metafieldWarn := d.syncMetafieldsForProducts(c.Request.Context(), sid, ids)
+
+	resp := gin.H{"applied": len(ids)}
+	if metafieldWarn != "" {
+		resp["metafield_sync_warning"] = metafieldWarn
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// syncMetafieldsForProducts writes the compliance metafields for a list of
+// product surrogate IDs after ApplyRuleset commits. Returns a non-empty warning
+// message if any metafield write failed. Never panics; always best-effort.
+//
+// The method skips silently if MetafieldWriter or ComplianceRecs or ShopifyProdIDs
+// are not configured (optional deps for unit tests that don't need metafield sync).
+func (d APIDeps) syncMetafieldsForProducts(ctx context.Context, shopID int64, productIDs []int64) string {
+	if d.MetafieldWriter == nil || d.ComplianceRecs == nil || d.ShopifyProdIDs == nil {
+		return ""
+	}
+	var lastErr error
+	failCount := 0
+	for _, pid := range productIDs {
+		if err := d.syncOneProductMetafield(ctx, shopID, pid); err != nil {
+			lastErr = err
+			failCount++
+		}
+	}
+	if lastErr != nil {
+		return fmt.Sprintf("metafield sync failed for %d product(s): %s — re-classify to sync", failCount, lastErr.Error())
+	}
+	return ""
+}
+
+// syncOneProductMetafield reads the compliance record for one product and calls
+// the metafield writer. It resolves the entity object and warning texts from their
+// stores. For needs_review products, entity and warnings are nil/empty.
+func (d APIDeps) syncOneProductMetafield(ctx context.Context, shopID, productID int64) error {
+	rec, err := d.ComplianceRecs.GetRecord(ctx, shopID, productID)
+	if err != nil || rec == nil {
+		return nil // no record to sync (product unknown or not yet classified)
+	}
+
+	shopifyProdID, err := d.ShopifyProdIDs.GetShopifyProductID(ctx, shopID, productID)
+	if err != nil {
+		return fmt.Errorf("resolve shopify_product_id for product %d: %w", productID, err)
+	}
+
+	var entity *model.Entity
+	var warnings []string
+
+	if rec.Status != model.StatusNeedsReview && rec.EntityID != nil {
+		entity, err = d.Entities.Get(ctx, shopID, *rec.EntityID)
+		if err != nil {
+			return fmt.Errorf("load entity %d: %w", *rec.EntityID, err)
+		}
+		// Resolve warning texts from template IDs.
+		for _, wtID := range rec.WarningTemplateIDs {
+			wt, wtErr := d.Warnings.Get(ctx, shopID, wtID)
+			if wtErr != nil {
+				return fmt.Errorf("load warning template %d: %w", wtID, wtErr)
+			}
+			if wt != nil {
+				warnings = append(warnings, wt.Text)
+			}
+		}
+	}
+
+	return d.MetafieldWriter.WriteComplianceMetafields(ctx, shopID, shopifyProdID, rec.Status, entity, warnings)
 }
 
 // allProductIDs returns every surrogate product id for the shop (paged through
@@ -687,17 +795,26 @@ func (d APIDeps) setOverride(c *gin.Context) {
 		return
 	}
 
+	// DB commit first (primary operation).
 	if err := d.Classifier.SetOverride(c.Request.Context(), sid, req.ProductID, req.EntityID, req.WarningTemplateIDs); err != nil {
 		serverError(c)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+
+	// Metafield sync — best-effort after DB commit.
+	metafieldWarn := d.syncMetafieldsForProducts(c.Request.Context(), sid, []int64{req.ProductID})
+
+	resp := gin.H{
 		"product_id":           req.ProductID,
 		"entity_id":            req.EntityID,
 		"status":               string(model.StatusOverride),
 		"matched_rule_id":      nil,
 		"warning_template_ids": emptyInt64(req.WarningTemplateIDs),
-	})
+	}
+	if metafieldWarn != "" {
+		resp["metafield_sync_warning"] = metafieldWarn
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func emptyInt64(s []int64) []int64 {

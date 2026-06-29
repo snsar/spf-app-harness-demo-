@@ -23,4 +23,9 @@ auth_callback_path = "/auth/callback"
 # No Node deps to install/build for a Go backend — keep build a no-op so the CLI
 # does not try to spawn an unknown package-manager install.
 build = "true"
-dev = "go run ./cmd/server"
+# The CLI provides SHOPIFY_API_KEY/SECRET, APP_URL/HOST (tunnel), PORT, SCOPES —
+# but NOT the DB credentials (those aren't Shopify's). dev-server.sh loads ONLY the
+# DB_* vars from the repo-root .env so MySQL auth works, without overriding the CLI's
+# tunnel APP_URL/PORT. Kept as a script (not inline) so the CLI doesn't mangle the
+# nested shell quoting.
+dev = "./dev-server.sh"

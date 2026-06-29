@@ -1,23 +1,23 @@
 {
   "$schema_note": "Permission order is deny -> ask -> allow; deny always wins. See the ai-security-review skill.",
   "permissions": {
-    "deny": [
-      // "Read(.env)",
-      // "Read(**/.env)",
-      // "Read(**/.env.*)",
-      // "Read(**/*.pem)",
-      // "Read(**/id_rsa)",
-      // "Read(**/*.key)",
-      // "Read(~/.ssh/**)",
-      // "Read(~/.aws/**)",
-      // "Edit(.claude/hooks/**)",
-      // "Write(.claude/hooks/**)",
-      // "Edit(.claude/settings.json)",
-      // "Bash(rm -rf *)",
-      // "Bash(rm -fr *)",
-      // "Bash(curl *)",
-      // "Bash(wget *)"
-    ],
+    // "deny": [
+    //   "Read(.env)",
+    //   "Read(**/.env)",
+    //   "Read(**/.env.*)",
+    //   "Read(**/*.pem)",
+    //   "Read(**/id_rsa)",
+    //   "Read(**/*.key)",
+    //   "Read(~/.ssh/**)",
+    //   "Read(~/.aws/**)",
+    //   "Edit(.claude/hooks/**)",
+    //   "Write(.claude/hooks/**)",
+    //   "Edit(.claude/settings.json)",
+    //   "Bash(rm -rf *)",
+    //   "Bash(rm -fr *)",
+    //   "Bash(curl *)",
+    //   "Bash(wget *)"
+    // ],
     "ask": [
       "Bash(git push *)"
     ],

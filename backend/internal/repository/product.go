@@ -120,6 +120,25 @@ func (r *ProductRepository) ListWithCompliance(ctx context.Context, shopID int64
 	return out, hasNext, nil
 }
 
+// GetShopifyProductID returns the Shopify product id (the remote ID stored in
+// shopify_product_id) for a local surrogate product id within the shop.
+// Returns (0, nil) when the product does not exist or belongs to another shop.
+// Used by the metafield sync path to form the Shopify product GID.
+func (r *ProductRepository) GetShopifyProductID(ctx context.Context, shopID, productID int64) (int64, error) {
+	var shopifyProdID int64
+	err := r.db.QueryRowContext(ctx,
+		"SELECT shopify_product_id FROM product WHERE shop_id = ? AND id = ?",
+		shopID, productID,
+	).Scan(&shopifyProdID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("get shopify_product_id for product %d: %w", productID, err)
+	}
+	return shopifyProdID, nil
+}
+
 // GetWithCompliance returns a single product (by surrogate id) within the shop
 // with its compliance record, or nil if the id is unknown / belongs to another
 // shop (cross-shop reads never leak — they map to not-found).

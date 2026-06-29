@@ -27,3 +27,7 @@ node_modules/
 # OS / editor
 .DS_Store
 *.log
+
+# Playwright persistent browser profile (login session — never commit)
+.playwright-profile/
+.playwright-cli/

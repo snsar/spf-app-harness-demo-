@@ -97,13 +97,27 @@ func main() {
 		productRepo,
 	)
 
+	// F7: Shopify metafield writer — writes GPSR compliance outcomes to Shopify
+	// product metafields (app namespace) so the Liquid storefront block can read
+	// them server-side. Uses the shop's stored offline access token (from DB via
+	// shopRepo), never a hardcoded or caller-supplied token.
+	metafieldSvc := service.NewShopifyMetafieldService(
+		&http.Client{Timeout: 15 * time.Second},
+		"2026-04",
+		shopRepo, // satisfies service.ShopTokenReader
+	)
+
 	// Webhooks (root router, NOT session-protected — Shopify is the caller).
 	// Protected by raw-body HMAC verification inside the handler.
+	// ShopTeardown is wired to shopRepo.TeardownShop for the app/uninstalled route.
 	handler.RegisterWebhookRoutes(router, handler.WebhookDeps{
-		APISecret:  cfg.ShopifyAPISecret,
-		Shops:      shopRepo,
-		Products:   productRepo,
-		Compliance: complianceRepo,
+		APISecret:       cfg.ShopifyAPISecret,
+		Shops:           shopRepo,
+		Products:        productRepo,
+		Compliance:      complianceRepo,
+		MetafieldWriter: metafieldSvc,
+		ShopifyProdIDs:  productRepo,
+		ShopTeardown:    shopRepo,
 	})
 
 	// Protected API group — every request must carry a valid App Bridge session
@@ -112,12 +126,15 @@ func main() {
 	api.Use(handler.RequireSessionToken(authDeps))
 	handler.RegisterMeRoute(api)
 	handler.RegisterAPIRoutes(api, handler.APIDeps{
-		Products:   productRepo,
-		Entities:   entityRepo,
-		Warnings:   warningRepo,
-		Rules:      ruleRepo,
-		Classifier: classifier,
-		Sync:       syncService,
+		Products:        productRepo,
+		Entities:        entityRepo,
+		Warnings:        warningRepo,
+		Rules:           ruleRepo,
+		Classifier:      classifier,
+		Sync:            syncService,
+		MetafieldWriter: metafieldSvc,
+		ComplianceRecs:  complianceRepo,
+		ShopifyProdIDs:  productRepo,
 	})
 
 	addr := ":" + cfg.BackendPort

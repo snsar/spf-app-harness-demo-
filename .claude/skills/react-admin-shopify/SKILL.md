@@ -34,10 +34,18 @@ work, not single-record entry.
   hook's expected shape against the real API response in one read.
 
 ## Embedded-App Constraints
-- The admin runs embedded in Shopify Admin (App Bridge): handle the session token,
-  respect Polaris-style patterns and the prototype's tokens.
+- The admin runs embedded in Shopify Admin (App Bridge): handle the session token
+  (attach as `Authorization: Bearer <jwt>` on every `/api` call; the backend's
+  `RequireSessionToken` expects it).
+- **Use Shopify Polaris (`@shopify/polaris`) for ALL admin UI** — this is a
+  Built-for-Shopify-quality embedded app; do NOT ship plain/unstyled HTML. Wrap the app
+  in Polaris `AppProvider` (with its CSS + en translations) once in the shared shell.
+  Use `Page`/`Card`, `IndexTable`/`DataTable` for lists, `FormLayout`/`TextField`/
+  `Select`/`Checkbox` for forms, `Banner`/`InlineError` for errors, `Frame`/`Navigation`
+  for the shell. Respect any tokens in `docs/prototype/` if present.
 - The theme extension runs on the storefront — treat all merchant/LLM-derived text as
-  untrusted; escape before render (coordinate with `ai-security-review`).
+  untrusted; escape before render (coordinate with `ai-security-review`). In React, never
+  use `dangerouslySetInnerHTML` for merchant text — default escaping only.
 
 ## State & Data
 - Surface the three terminal states clearly (`ok` / `needs_review` / `override`); never

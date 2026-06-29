@@ -12,8 +12,31 @@ client_id = "9dd02bd0f4a1c7f2286123e9800d896e"
 application_url = "https://gpsr.quotesnap.local"   # overwritten by `shopify app dev` (tunnel) / set in F9
 embedded = true
 
+# Two-process app: backend/ (Go+Gin, roles=backend) + frontend/ (Vite/React, roles=frontend).
+# The CLI routes the embedded iframe request for / to the frontend process and
+# proxies /api, /auth, /webhooks, /healthz from there to BACKEND_PORT (Go).
+# Each directory has its own shopify.web.toml defining roles and dev commands.
+web_directories = ["backend", "frontend"]
+
+# The theme app extension lives under storefront/extensions/ (not the CLI default
+# ./extensions/). Without this, `shopify app deploy` silently omits the storefront
+# safety block from the app version, so it never appears in the theme editor.
+extension_directories = ["storefront/extensions/*"]
+
+[build]
+# Let `shopify app dev` update application_url + redirect_urls automatically to the
+# tunnel URL each run (so Shopify's OAuth callback reaches the tunnel, not the
+# local-only gpsr.quotesnap.local).
+automatically_update_urls_on_dev = true
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+# Managed install (no use_legacy_install_flow): Shopify grants the scopes declared
+# HERE and synced via `shopify app deploy`. This is required for app-specific
+# webhooks (products/create, products/update, app/uninstalled below) — legacy
+# install flow is incompatible with them. After deploy, opening the app prompts
+# the merchant to grant read_products+write_products, yielding a correctly-scoped
+# token.
 scopes = "read_products,write_products"
 
 [auth]
@@ -22,3 +45,44 @@ redirect_urls = [ "https://gpsr.quotesnap.local/auth/callback" ]
 
 [webhooks]
 api_version = "2026-04"
+
+# Webhook subscriptions — registered with Shopify via `shopify app deploy`.
+# All routes are on the backend (Go + Gin). The Go handler reads the raw body
+# first, then verifies the HMAC (X-Shopify-Hmac-Sha256 header, base64 SHA-256
+# of raw body keyed with SHOPIFY_API_SECRET) before any JSON parse.
+# The callback path is relative; `shopify app deploy` prepends the public app URL.
+
+[[webhooks.subscriptions]]
+topics = ["products/create"]
+uri    = "/webhooks/products/create"
+
+[[webhooks.subscriptions]]
+topics = ["products/update"]
+uri    = "/webhooks/products/update"
+
+[[webhooks.subscriptions]]
+# app/uninstalled: triggers shop teardown in proven F3b order:
+#   DELETE compliance_record -> DELETE classification_rule -> DELETE shop (CASCADE)
+# Handler: POST /webhooks/app/uninstalled (backend/internal/handler/webhook.go)
+topics = ["app/uninstalled"]
+uri    = "/webhooks/app/uninstalled"
+
+# F7: App-owned GPSR compliance metafields on product (namespace "$app" in
+# GraphQL, "app" in Liquid: {{ product.metafields.app.<key>.value }}).
+# Declared here so `shopify app deploy` / `shopify app dev` registers them.
+# The backend writes these via metafieldsSet after every apply/override/needs_review.
+# Merchants cannot edit these fields directly (no access.admin setting = app-managed).
+[product.metafields.app.gpsr_status]
+name        = "GPSR Compliance Status"
+description = "Terminal compliance state: ok | override | needs_review"
+type        = "single_line_text_field"
+
+[product.metafields.app.gpsr_entity_json]
+name        = "GPSR Responsible Entity"
+description = "Serialised JSON: {name, address, role} — internal fields excluded"
+type        = "json"
+
+[product.metafields.app.gpsr_warnings_json]
+name        = "GPSR Safety Warnings"
+description = "Serialised JSON array of plain-text warning strings"
+type        = "json"

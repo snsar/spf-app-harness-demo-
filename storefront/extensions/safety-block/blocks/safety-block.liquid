@@ -1,0 +1,114 @@
+{%- comment -%}
+  GPSR Safety Block — storefront Liquid block.
+
+  Data source: three app-owned product metafields written by the backend
+  (service/shopify_metafield.go) after apply-ruleset, set-override, or
+  needs_review classification. All three metafields share the "$app"
+  GraphQL namespace, which maps to "app" in Liquid.
+
+  Terminal-state render contract (F7-storefront-contract.md §§):
+    gpsr_status == "ok"       → render full block (entity + warnings)
+    gpsr_status == "override" → render full block (override data IS the compliance data)
+    gpsr_status == "needs_review" → render NOTHING (empty/hidden container)
+    gpsr_status absent / blank    → render NOTHING (same as needs_review)
+
+  NEVER render partial data or a "pending" placeholder for non-ok states.
+
+  XSS contract (spec §5):
+    - Every {{ output }} of metafield/setting data uses the escape filter (defense-in-depth).
+    - Liquid auto-escapes {{ }} output; the escape filter is mandatory per spec and
+      verified by the ai-security-review gate (grep on blocks/*.liquid).
+    - Unescaped output filters are prohibited. No JavaScript in this block (MVP).
+{%- endcomment -%}
+
+{%- comment -%}
+  App-owned metafields use the reserved namespace "$app" (see Shopify "Reserved
+  prefixes for metafields in theme app extensions"). They MUST be accessed with
+  the bracket syntax product.metafields["$app"].<key> — the dotted form
+  product.metafields.app.<key> resolves to a literal "app" namespace (empty) and
+  the block would always render blank.
+{%- endcomment -%}
+{%- assign gpsr_status = product.metafields["$app"].gpsr_status.value -%}
+
+{%- if gpsr_status == "ok" or gpsr_status == "override" -%}
+
+  {%- assign gpsr_entity   = product.metafields["$app"].gpsr_entity_json.value -%}
+  {%- assign gpsr_warnings = product.metafields["$app"].gpsr_warnings_json.value -%}
+
+  <div class="gpsr-safety-block" {{ block.shopify_attributes }}>
+
+    {%- if block.settings.heading != blank -%}
+      <h2 class="gpsr-safety-block__heading">
+        {{- block.settings.heading | escape -}}
+      </h2>
+    {%- endif -%}
+
+    {%- if block.settings.show_entity and gpsr_entity != blank -%}
+      <div class="gpsr-safety-block__entity">
+        {%- if gpsr_entity.name != blank -%}
+          <p class="gpsr-safety-block__entity-name">
+            {{- gpsr_entity.name | escape -}}
+          </p>
+        {%- endif -%}
+        {%- if gpsr_entity.address != blank -%}
+          <p class="gpsr-safety-block__entity-address">
+            {{- gpsr_entity.address | escape -}}
+          </p>
+        {%- endif -%}
+        {%- if gpsr_entity.role != blank -%}
+          <p class="gpsr-safety-block__entity-role">
+            {{- gpsr_entity.role | escape -}}
+          </p>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    {%- if block.settings.show_warnings and gpsr_warnings != blank and gpsr_warnings.size > 0 -%}
+      <ul class="gpsr-safety-block__warnings">
+        {%- for warning_text in gpsr_warnings -%}
+          {%- if warning_text != blank -%}
+            <li class="gpsr-safety-block__warning">
+              {{- warning_text | escape -}}
+            </li>
+          {%- endif -%}
+        {%- endfor -%}
+      </ul>
+    {%- endif -%}
+
+  </div>
+
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "GPSR Safety Block",
+  "target": "section",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "stylesheet": "safety-block.css",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Section heading",
+      "default": "Product Safety Information",
+      "info": "Displayed above the responsible operator and safety warnings on the product page."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_entity",
+      "label": "Show responsible operator",
+      "default": true,
+      "info": "Displays the economic operator name, address, and role required by EU GPSR."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_warnings",
+      "label": "Show safety warnings",
+      "default": true,
+      "info": "Displays the product-specific safety warnings assigned by the GPSR app."
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,17 @@
+{
+  "name": "GPSR Safety Block",
+  "settings": {
+    "heading": {
+      "label": "Section heading",
+      "info": "Displayed above the responsible operator and safety warnings on the product page."
+    },
+    "show_entity": {
+      "label": "Show responsible operator",
+      "info": "Displays the economic operator name, address, and role required by EU GPSR."
+    },
+    "show_warnings": {
+      "label": "Show safety warnings",
+      "info": "Displays the product-specific safety warnings assigned by the GPSR app."
+    }
+  }
+}

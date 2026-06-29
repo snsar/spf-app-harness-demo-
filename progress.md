@@ -3,14 +3,17 @@
 > Running log. One feature in-progress at a time. DONE requires evidence in
 > `.claude/feature_list.json`.
 
-## Status snapshot
-- **Done:** F0 (scaffold), F1 (migrations), F2 (rules engine — QA+security gated),
-  F3 (per-shop OAuth — security FAIL→fixed→re-verify PASS)
-- **In progress:** F3b — Backend API + Shopify sync. Design APPROVED (docs/specs/F3b-api-contract.md),
-  building via TDD. CRITICAL: migration 003 adds multi-tenant shop_id scoping (F1 was single-tenant);
-  F2 repo/Classifier signatures gain leading shopID (pure Classify unchanged).
+## Status snapshot — 🎉 ALL F0–F9 DONE
+- **Done:** F0, F1, F2, F3, F3b, F4, F5, F6, F7, F8, F9 — every feature evidence-gated.
+- **In progress:** (none — build loop complete)
 - **Blocked:** (none)
-- **Next up after F3b:** F4 + F5 (admin library / rules config), both deps F3b.
+- **Whole-project:** `bash init.sh` → HARNESS XANH with guardrails ACTIVE + DB tier.
+  184 tests green (backend 116 + frontend 68). F8-SEC-1 closed (guardrails restored at F9).
+- **REMAINING = live verify (USER, needs interactive Shopify + deployed env):**
+  shopify app deploy; click Install (OAuth); live product webhook; live app/uninstalled;
+  Playwright E2E for F6+F7; nginx prod-mode switch. See deploy/README.md + session-handoff.md.
+- **Pre-prod hardening (documented, non-blocking):** F9-1 nginx CORS allowlist (MEDIUM),
+  F9-2/3 nginx prod-mode + real application_url (LOW); npm dev-only vulns; 658KB bundle code-split.
 
 ## F3b design decisions (locked 2026-06-29)
 Q1=product surrogate id + shopify_product_id UNIQUE(shop_id,shopify_product_id).
@@ -48,3 +51,14 @@ Existing nginx pattern read from /etc/nginx/sites-available/*.quotesnap.local.co
 | 2026-06-29 | F3 | DONE — Shopify per-shop OAuth + install (shop table, HMAC/state/JWT, session-token mw, port 8000) | init.sh GREEN w/ DB tier. Independent security: FAIL F3-SEC-1 HIGH (empty-secret forgeable, reproduced) → TDD fix (Validate() fail-closed boot + primitive guards + gin logger query-strip + TrimSpace hardening) → re-verify PASS (forgery now rejected, no regression). _workspace/F3_security_auth.md |
 | 2026-06-29 | — | Repo restructure: admin/ → frontend/; added storefront/ (theme app extension dir, README + extensions/.gitkeep) + root shopify.app.toml SKELETON for Shopify CLI | Synced init.sh, package.json, .gitignore, AGENTS.md (+changelog), plan.md, feature_list (F0/F9 desc), frontend-engineer agent + react-admin-shopify skill. shopify.app.toml network fields left as F9 placeholders. `bash init.sh` → HARNESS XANH (frontend/ path works). |
 | 2026-06-29 | — | Local dev via nginx (reuse quotesnap pattern), NOT tunnel — user runs app cũ-style on gpsr.quotesnap.local | Added deploy/nginx/gpsr.quotesnap.local.conf (HTTPS mkcert + CORS/OPTIONS; / → Vite 5173, /api+/auth+/healthz → Go 8000) + deploy/setup-local.sh (sudo: mkcert cert, install site, /etc/hosts, nginx -t+reload). DOCUMENTED limit: /etc/hosts is local-only so Shopify-initiated OAuth callback/webhooks cannot reach it (browser-initiated /auth works); real callback needs tunnel or public domain (F9). Needs SHOPIFY_APP_URL=https://gpsr.quotesnap.local in .env (user-set; not secret). |
+| 2026-06-29 | — | Shopify CLI link: shopify.app.toml linked to app gspr-harness (client_id filled by CLI); [[web]] moved to backend/shopify.web.toml (roles=backend); config.Load() reads CLI aliases APP_URL/HOST + PORT (precedence: own var wins) so both local .env and `shopify app dev` tunnel work | Local stack verified GREEN: backend boot + nginx https + /auth 302 to Shopify + /api/me 401. Live callback still needs tunnel (hosts is local-only). |
+| 2026-06-29 | F3b | DONE — Backend API + sync + multi-tenant scoping (migration 003 shop_id; F2 sig +shopID) | init.sh XANH, 168 tests. QA PASS + security PASS (2 MEDIUM: cross-shop override + SSRF, both fixed TDD + re-verified w/ mutation testing). _workspace/F3b_{qa_report,security_review}.md |
+| 2026-06-29 | — | 5 sub-agents model opus→sonnet (token cost) | orchestrator may override model=opus per-call on HIGH-risk security gates. AGENTS.md changelog. |
+| 2026-06-29 | — | Frontend standardized on Shopify Polaris (skill react-admin-shopify updated) | User caught agents weren't told to use Polaris; now a durable skill rule for F6/F7. F4 owns @shopify/polaris@13.9.5 install. |
+| 2026-06-29 | F4 | DONE — entity + warning-template library (Polaris, App Bridge session token, shared app-shell) | init.sh XANH from clean (npm ci resolves Polaris), 47 tests. QA no-drift; F4-1 LOW type fixed. _workspace/F4_F5_qa_report.md |
+| 2026-06-29 | F5 | DONE — classification rules config (Polaris, precedence (priority,id) visible, reorder=edit priority) | Parallel with F4. init.sh XANH, TDD ordering test. QA no-drift, no phantom order endpoint. |
+| 2026-06-29 | F6 | DONE (E2E deferred to F9) — bulk product editor + 3-state compliance status (Polaris) | init.sh XANH, 68 tests. QA PASS unit/integration, no drift, no phantom endpoint, mark-reviewed=apply-ruleset. E2E tier OPEN→deferred F9 (user waiver). _workspace/F6_qa_report.md |
+| 2026-06-29 | F7 | DONE (E2E→F9, HUMAN APPROVED) — storefront safety block (Option B metafields + Liquid theme ext) | Backend WriteComplianceMetafields (SSRF-guarded, best-effort, surface warning) + storefront/extensions/safety-block (Liquid, all outputs \| escape, no JS). Security PASS Opus (XSS clean, SSRF 0-egress, no leak), 2 LOW. init.sh XANH w/ DB. _workspace/F7_security_review.md |
+| 2026-06-29 | F8 | DONE (cond: F8-SEC-1→F9) — whole-app security hardening pass (Opus) | App posture PASS, all prior HIGH/MED re-verified fixed in code; SQL parameterized, \| escape, no secret-log all HOLD. F8-SEC-1 HIGH: guardrails (deny+hook) commented out by user during .env debug → restore at F9/merge (user deferred). npm vulns dev-only accepted. init.sh XANH. _workspace/F8_security_hardening.md |
+| 2026-06-29 | F9 | DONE — deploy config (LAST): shopify.app.toml webhooks + nginx prod/dev + README + app/uninstalled handler + GUARDRAILS RESTORED (F8-SEC-1 closed) | TDD uninstall handler (teardown order F3b-proven, multi-tenant). QA PASS, 184 tests green whole-project. Guardrails active (live-confirmed). Launch gaps F9-1/2/3 documented (pre-prod). init.sh XANH. _workspace/F9_qa_report.md |
+| 2026-06-29 | — | 🎉 BUILD LOOP COMPLETE — all F0–F9 done, evidence-gated. Whole-project init.sh HARNESS XANH with guardrails active. | Remaining = live verify (interactive Shopify) per session-handoff.md. |

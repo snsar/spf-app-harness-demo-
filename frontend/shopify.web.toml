@@ -1,0 +1,19 @@
+# Shopify CLI web process config for the React / Vite frontend.
+# `shopify app dev` starts this process and routes the embedded iframe (/) to it.
+#
+# The CLI provides these env vars to the frontend process:
+#   SHOPIFY_API_KEY   — passed to Vite so App Bridge can initialise
+#   FRONTEND_PORT / PORT — port the CLI expects Vite to listen on
+#   BACKEND_PORT      — port the backend process is listening on (Vite proxies to it)
+#
+# This is a roles=["frontend"] process. The CLI routes the iframe's / requests here;
+# Vite dev server proxies /api, /auth, /webhooks, /healthz to BACKEND_PORT (Go+Gin).
+
+roles = ["frontend"]
+
+[commands]
+# No build step needed during `shopify app dev` — Vite serves in watch mode.
+build = "true"
+# Vite reads FRONTEND_PORT (or PORT) for server.port and BACKEND_PORT for the proxy.
+# npm ci is a no-op if node_modules is current; `--` passes CLI-injected env through.
+dev = "npm run dev"
