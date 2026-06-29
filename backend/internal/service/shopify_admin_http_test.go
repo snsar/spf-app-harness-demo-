@@ -82,3 +82,44 @@ func TestShopifyAdminHTTP_RequestShape(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+// TestShopifyAdminHTTP_RejectsHostileShopDomain reproduces F3b-SEC-2: the live
+// (production) path must validate shopDomain before building the egress URL or
+// attaching the access token. A hostile shopDomain must return an error WITHOUT
+// making any HTTP request (no egress, no token leak). This exercises the real URL
+// construction path (no baseOverride), so the http.Client is a tripwire that fails
+// the test if any request is sent.
+func TestShopifyAdminHTTP_RejectsHostileShopDomain(t *testing.T) {
+	var egress bool
+	tripwire := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			egress = true
+			t.Fatalf("SSRF: client sent a request to %q (token leaked)", r.URL.String())
+			return nil, nil
+		}),
+	}
+	c := NewShopifyAdminHTTP(tripwire, "2024-10")
+	// No baseOverride: this is the production URL-construction path.
+
+	hostile := []string{
+		"evil.com",
+		"169.254.169.254",
+		"localhost:6379",
+		"good.myshopify.com@evil.com",
+		"",
+	}
+	for _, dom := range hostile {
+		_, err := c.FetchProducts(context.Background(), dom, "secret-token", "")
+		if err == nil {
+			t.Errorf("FetchProducts(%q) returned nil error, want validation error", dom)
+		}
+		if egress {
+			t.Fatalf("FetchProducts(%q) made an HTTP request (SSRF / token egress)", dom)
+		}
+	}
+}
+
+// roundTripFunc adapts a function to http.RoundTripper for the SSRF tripwire.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

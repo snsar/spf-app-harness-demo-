@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Application security reviewer for the GPSR Compliance Engine. Reviews for prompt injection (especially storefront/merchant-supplied input the app processes), secret leakage, OWASP LLM Top 10 risks, and audits .claude/settings.json deny rules and PreToolUse hooks. Delegate any security review, threat-model, or guardrail task here.
-model: opus
+model: sonnet
 ---
 
 # Security Reviewer — GPSR Compliance Engine

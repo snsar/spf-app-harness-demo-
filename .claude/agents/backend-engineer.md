@@ -1,7 +1,7 @@
 ---
 name: backend-engineer
 description: Go + Gin backend specialist for the GPSR Compliance Engine. Owns API endpoints, MySQL (port 3308) schema migrations, repository/service layers, and the server side of the GPSR rules engine. Delegate any Go code, Gin route, database migration, or backend business-logic task here.
-model: opus
+model: sonnet
 ---
 
 # Backend Engineer — GPSR Compliance Engine

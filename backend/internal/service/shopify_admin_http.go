@@ -96,6 +96,14 @@ func (c *shopifyAdminHTTP) FetchProducts(ctx context.Context, shopDomain, access
 
 	url := c.baseOverride
 	if url == "" {
+		// SSRF defense-in-depth (F3b-SEC-2): the egress URL embeds shopDomain and
+		// carries the shop access token. Validate the domain at the action layer
+		// before constructing the URL or sending the token, regardless of how the
+		// value reached this client. The test/fake path sets baseOverride, so this
+		// gate only guards the real production URL.
+		if err := ValidateShopDomain(shopDomain); err != nil {
+			return ProductPage{}, fmt.Errorf("invalid shop domain for admin request: %w", err)
+		}
 		url = fmt.Sprintf("https://%s/admin/api/%s/graphql.json", shopDomain, c.version)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))

@@ -23,6 +23,9 @@ import (
 
 type productLister interface {
 	ListWithCompliance(ctx context.Context, shopID int64, page, limit int) ([]model.ProductWithCompliance, bool, error)
+	// GetWithCompliance returns a single product within the shop, or nil for an
+	// unknown / cross-shop id. Used to enforce product-ownership on writes.
+	GetWithCompliance(ctx context.Context, shopID, productID int64) (*model.ProductWithCompliance, error)
 }
 
 type entityStore interface {
@@ -654,6 +657,18 @@ func (d APIDeps) setOverride(c *gin.Context) {
 	}
 	if req.ProductID <= 0 || req.EntityID <= 0 {
 		badRequest(c, "product_id and entity_id are required")
+		return
+	}
+	// Validate the product belongs to the shop (spec §4.6). The product FK
+	// references the global surrogate product(id), so without this check shop A
+	// could write a compliance_record pointing at shop B's product. Cross-shop /
+	// unknown ids map to 404 (never reveal another tenant's row exists), matching
+	// the rest of the API's cross-shop convention.
+	if owned, err := d.Products.GetWithCompliance(c.Request.Context(), sid, req.ProductID); err != nil {
+		serverError(c)
+		return
+	} else if owned == nil {
+		notFound(c)
 		return
 	}
 	// Validate entity + warnings belong to the shop (reuse the rule-ref checks).

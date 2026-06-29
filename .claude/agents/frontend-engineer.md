@@ -1,7 +1,7 @@
 ---
 name: frontend-engineer
 description: React admin specialist for the GPSR Compliance Engine Shopify embedded app. Owns the admin UI (bulk product editor, classification-rules config, responsible-entity library) and the Shopify theme app extension storefront safety block. Delegate any React, admin UI, or theme-extension task here.
-model: opus
+model: sonnet
 ---
 
 # Frontend Engineer — GPSR Compliance Engine

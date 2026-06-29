@@ -1,7 +1,7 @@
 ---
 name: qa-integration
 description: QA and integration specialist for the GPSR Compliance Engine. Verifies the boundary between the Go API and the React admin by comparing response shapes against frontend hooks, runs the verification ladder, drives Playwright CLI E2E tests, and performs incremental QA after each module. Delegate any verification, integration-check, or E2E task here.
-model: opus
+model: sonnet
 ---
 
 # QA / Integration Engineer — GPSR Compliance Engine

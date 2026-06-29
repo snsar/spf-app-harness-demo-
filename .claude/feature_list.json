@@ -63,8 +63,8 @@
       "dependencies": [
         "F3"
       ],
-      "status": "in-progress",
-      "evidence": ""
+      "status": "done",
+      "evidence": "FULL init.sh GREEN (exit 0): 'HARNESS XANH — verify chain passed.' with DB tier real (MySQL:3308, GPSR_DB_TESTS=1, migrate up applied [1 2 3]; uncached DB test times handler 3.7s/migrate 3.1s/repository 3.6s — not skip-times). 168 tests PASS, 0 SKIP, 0 FAIL. TDD RED-first throughout (build agent + both security fixes saw fail-then-pass). DESIGN approved first: docs/specs/F3b-api-contract.md. CRITICAL multi-tenant migration: migrations/003_shop_scoping.{up,down}.sql adds shop_id NOT NULL + FK ON DELETE CASCADE to entity/warning_template/product/classification_rule/compliance_record; product PK→surrogate id + shopify_product_id with UNIQUE(shop_id,shopify_product_id) (Q1 Option A); per-shop unique/precedence keys (compliance UNIQUE(shop_id,product_id); rule idx (shop_id,priority)); compliance_record.entity_id→NULLable + FK SET NULL (needed for C2 needs_review records). Migration up→down→up clean (TestUpDownRoundTrip + TestMigration003_DownRestores PASS). F2 contract change: ComplianceRepository (GetProducts/GetRecord/SaveRecord/DeleteRecord) + Classifier (ApplyRuleset/SetOverride/ClearOverride) gained leading shopID; pure Classify(product,rules) UNCHANGED. NEW files: repository/{product,entity,warning_template,rule,errors}.go; service/{shopify_admin,shopify_admin_http}.go + VerifyWebhookHMAC in shopify_auth.go; handler/{webhook,api,csp}.go; model ProductWithCompliance. Endpoints (all /api/* shop-scoped via RequireSessionToken+ShopFromContext): GET /api/products (offset pagination ?page=&limit= default 50 max 250, has_next — Q4); entity/warning-template/rule CRUD (201/204; DELETE referenced→409 mapping MySQL 1451; cross-shop id→404); rules list ordered (priority,id) C1; POST /api/compliance/apply (F2 ApplyRuleset); POST /api/compliance/override + DELETE /api/compliance/override/:product_id (C3); POST /api/sync (contract-based, live deferred). Webhooks (root, raw-body HMAC, no session): POST /webhooks/products/{create,update} — VerifyWebhookHMAC constant-time + empty-secret fail-closed, raw body read before JSON parse, unknown shop→401, idempotent upsert C7, mark needs_review unless override C3/C8. CSP middleware: frame-ancestors https://<validated-shop>.myshopify.com https://admin.shopify.com (invalid/absent shop→admin.shopify.com only; no reflect, no '*'). nginx: deploy/nginx adds /webhooks to location alternation, CSP not stripped. VERIFICATION (separate doer/checker): QA-integration PASS (_workspace/F3b_qa_report.md — 168 tests no skip, false-green guard proven via DB_PORT=9999 FAIL, no contract drift, shop-isolation holds incl own 2-shop same-shopify-id throwaway test, 3 deviations sound). Security-reviewer PASS no HIGH/CRITICAL (_workspace/F3b_security_review.md), found 2 MEDIUM both REPRODUCED: F3b-SEC-1 setOverride missing product-ownership (cross-shop phantom record) + F3b-SEC-2 SSRF (admin client egress to unvalidated host leaking token). Both FIXED via TDD (handler/api.go setOverride now GetWithCompliance→404 cross-shop; shopify_admin_http.go FetchProducts ValidateShopDomain before egress) and INDEPENDENTLY RE-VERIFIED PASS with mutation testing (reverting each fix reproduces the exact exploit → tests are load-bearing; cross-shop override→404 with 0 rows; hostile domains evil.com/169.254.169.254/localhost/userinfo-trick→zero egress; no regression). Deviations: offset pagination (Q4), entity_id NULLable+SET NULL (C2 not weakening C5), app-orchestrated shop teardown (C5 RESTRICT intact + cascade proven). Published shapes: _workspace/F3b_backend_api.md. Follow-ups (non-blocking): live Shopify sync/webhook delivery deferred to F9 (unit-tested w/ fakes); F9 uninstall handler must use proven delete order; frontend keys on SURROGATE id not Shopify id; 5 npm vulns (1 critical) in frontend tree to address at F4."
     },
     {
       "id": "F4",
@@ -73,7 +73,7 @@
       "dependencies": [
         "F3b"
       ],
-      "status": "pending",
+      "status": "in-progress",
       "evidence": ""
     },
     {
@@ -83,7 +83,7 @@
       "dependencies": [
         "F3b"
       ],
-      "status": "pending",
+      "status": "in-progress",
       "evidence": ""
     },
     {

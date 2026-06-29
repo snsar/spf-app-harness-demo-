@@ -1,10 +1,49 @@
 package handler_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/gpsr/backend/internal/model"
+	"github.com/gpsr/backend/internal/repository"
 )
+
+// TestAPI_Override_CrossShopProduct_Rejected reproduces F3b-SEC-1: shop A must not
+// be able to set a compliance override on a product owned by shop B. The product
+// FK references the global surrogate product(id), so without an ownership check the
+// handler writes a compliance_record(shop_id=A, product_id=<B's id>). The override
+// must be rejected (404, consistent with the rest of the API hiding cross-shop
+// existence) and NO compliance_record may be created for that product.
+func TestAPI_Override_CrossShopProduct_Rejected(t *testing.T) {
+	e := newAPIEnv(t)
+	ctx := context.Background()
+	prepo := repository.NewProductRepository(e.db)
+
+	// Product belongs to shop B.
+	pidB, _ := prepo.Upsert(ctx, e.shopB.ID, 7500, model.Product{Title: "B-product"})
+	// Entity belongs to shop A (so the entity check passes; only the product is cross-shop).
+	entA := seedAPIEntity(t, e.db, e.shopA.ID)
+
+	// Shop A (default tenant) sets an override on shop B's product id.
+	w := e.do(t, http.MethodPost, "/api/compliance/override", map[string]any{
+		"product_id": pidB, "entity_id": entA, "warning_template_ids": []int64{}})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("override on cross-shop product -> %d, want 404 (%s)", w.Code, w.Body.String())
+	}
+
+	// No compliance_record may have been created for that product under shop A.
+	var n int
+	if err := e.db.QueryRow(
+		"SELECT COUNT(*) FROM compliance_record WHERE shop_id=? AND product_id=?",
+		e.shopA.ID, pidB).Scan(&n); err != nil {
+		t.Fatalf("count records: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("phantom compliance_record created for shop A on shop B's product id %d (count=%d)", pidB, n)
+	}
+}
 
 // TestAPI_InjectionGuard_WritePaths sends hostile SQL-looking text through the
 // entity/warning/rule create endpoints; parameterized SQL must store it verbatim
