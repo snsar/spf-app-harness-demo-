@@ -1,0 +1,24 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+#
+# Linked to "gspr-harness" via `shopify app config link`. The Shopify CLI runs
+# `shopify app dev` / `shopify app deploy` from this directory (repo root).
+# The Go backend process is defined in backend/shopify.web.toml (roles=["backend"]).
+#
+# `shopify app dev` overwrites application_url + [auth].redirect_urls with the tunnel
+# URL on each run. The API SECRET is never stored here — it stays in .env.
+
+name = "gspr-harness"
+client_id = "9dd02bd0f4a1c7f2286123e9800d896e"
+application_url = "https://gpsr.quotesnap.local"   # overwritten by `shopify app dev` (tunnel) / set in F9
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_products,write_products"
+
+[auth]
+# `shopify app dev` overwrites this with "<tunnel>/auth/callback" each run.
+redirect_urls = [ "https://gpsr.quotesnap.local/auth/callback" ]
+
+[webhooks]
+api_version = "2026-04"

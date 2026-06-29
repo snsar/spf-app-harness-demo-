@@ -1,0 +1,24 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: gpsr-mysql
+    # MySQL 8.4 removed --default-authentication-plugin; caching_sha2_password is the default.
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpw}
+      MYSQL_DATABASE: ${DB_NAME:-gpsr}
+      MYSQL_USER: ${DB_USER:-gpsr}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-change_me}
+    ports:
+      # Host 3308 -> container 3306 (project standard: MySQL on 3308).
+      - "3308:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_ROOT_PASSWORD:-rootpw}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    volumes:
+      - gpsr-db-data:/var/lib/mysql
+
+volumes:
+  gpsr-db-data:

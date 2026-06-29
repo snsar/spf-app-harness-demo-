@@ -1,0 +1,29 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+
+# Harness workspace (intermediate artifacts kept locally for audit)
+_workspace/
+_workspace_prev/
+.claude/scheduled_tasks.lock
+
+# Backend (Go)
+backend/bin/
+backend/tmp/
+
+# Frontend (React/Node)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+node_modules/
+
+# Shopify CLI
+.shopify/
+
+# OS / editor
+.DS_Store
+*.log

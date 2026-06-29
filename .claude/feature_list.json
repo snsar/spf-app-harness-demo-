@@ -1,0 +1,131 @@
+{
+  "project": "GPSR Compliance Engine",
+  "description": "EU GPSR product-safety compliance automation for Shopify (bulk classification rules engine + storefront safety block).",
+  "conventions": {
+    "status_values": [
+      "pending",
+      "in-progress",
+      "blocked",
+      "done"
+    ],
+    "in_progress_limit": 1,
+    "evidence_required_for_done": true,
+    "evidence_examples": [
+      "go test ./... output",
+      "go build output",
+      "playwright E2E run",
+      "QA report path in _workspace/"
+    ]
+  },
+  "features": [
+    {
+      "id": "F0",
+      "name": "Project scaffold + init.sh green",
+      "description": "Monorepo skeleton (frontend/, backend/, storefront/ extensions, root shopify.app.toml), docker-compose MySQL:3308, init.sh runs the full verify chain to green.",
+      "dependencies": [],
+      "status": "done",
+      "evidence": "FULL init.sh GREEN (exit 0): 'HARNESS XANH — verify chain passed.' Toolchain go1.24.10 + node v22.20.0 + docker ok. DB: MySQL 8.4 on host port 3308 healthy (fixed: removed --default-authentication-plugin which MySQL 8.4 dropped). Backend: go vet ok, go build ok, go test ok (TestHealthz PASS, GET /healthz -> 200 {\"status\":\"ok\"}). Admin: npm run lint exit 0; vitest run -> 1/1 passed (src/App.test.tsx); vite build -> dist emitted in ~683ms. Files: backend/ (go.mod, cmd/server, internal/{handler,config,service,repository,model}, migrations/), admin/ (Vite5+React18+TS5, vitest), docker-compose.yml (mysql:8.4 -> 3308). Contract: _workspace/F0_backend_api_contract.md."
+    },
+    {
+      "id": "F1",
+      "name": "Data model + migrations",
+      "description": "MySQL schema for entity, warning_template, classification_rule, compliance_record. Migrations with up/down.",
+      "dependencies": [
+        "F0"
+      ],
+      "status": "done",
+      "evidence": "FULL init.sh GREEN (exit 0): 'HARNESS XANH — verify chain passed.' Migration approach: dependency-light Go runner (internal/migrate) over plain SQL files migrations/001_initial_schema.{up,down}.sql; CLI cmd/migrate (up|down). Host has Go but no migrate/mysql client, so a Go runner keeps init.sh on Go commands. init.sh runs `go run ./cmd/migrate up` after MySQL healthy, before go test. TDD: wrote internal/migrate/migrate_test.go (Load ordering, missing-down error, statement split, regression: semicolon-in-comment) RED first, then runner GREEN; DB-backed internal/migrate/migrate_db_test.go TestUpDownRoundTrip PASS (applies, asserts 7 tables, idempotent re-up no-op, down+up cycle). `go test ./... ` ok; go vet ok; go build ok. Real DB on 3308: UP -> applied versions [1]; SHOW TABLES = classification_rule, compliance_record, compliance_record_warnings, entity, product, rule_warning_templates, schema_migrations, warning_template; DESCRIBE compliance_record proves status ENUM('ok','needs_review','override') default needs_review and matched_rule_id Null=YES; UP again -> 'nothing to apply' (idempotent); DOWN -> rolled back version 1, SHOW TABLES = only schema_migrations; UP -> applied [1] again. C5 verified: DELETE referenced entity -> MySQL Error 1451 (fk_rule_entity RESTRICT); DELETE referenced warning_template -> Error 1451 (fk_rwt_template RESTRICT). Join tables (rule_warning_templates, compliance_record_warnings) chosen over JSON id arrays so FK RESTRICT can enforce C5; match_conditions/applies_to/tags are JSON. Published schema: _workspace/F1_backend_schema.md."
+    },
+    {
+      "id": "F2",
+      "name": "GPSR rules engine (core logic)",
+      "description": "Classify product -> responsible entity + warnings; deterministic, auditable (records matched rule id); terminal states ok/needs_review/override.",
+      "dependencies": [
+        "F1"
+      ],
+      "status": "done",
+      "evidence": "FULL init.sh GREEN (exit 0): 'HARNESS XANH — verify chain passed.' TDD (RED-first, verified): wrote engine_test.go then engine.go; classifier_test.go then classifier.go; repository compliance_db_test.go then compliance.go. go vet ./... exit 0; go build ./... exit 0; go test ./... all PASS (no SKIP, DB up). Pure engine (internal/service/engine.go, NO DB): Classify orders rules by (priority asc, id asc) first-match-wins (C1), ALL present conditions must hold, absent product field never matches incl. empty-string (C4), empty-condition rule matches nothing; match->ok+matched_rule_id+entity+warnings, no-match->needs_review inventing nothing (C2); Classify never emits override. Classifier (classifier.go) over a ComplianceRepository interface (unit-tested with in-memory fake): ApplyRuleset bulk skips existing override records (C3 fwd) else reclassifies+upserts -> idempotent (C6); SetOverride writes override w/ matched_rule_id NULL; ClearOverride deletes record so inference resumes (C3 rev). Repository (repository/compliance.go) parameterized SQL only; SaveRecord = single-tx upsert by product_id UNIQUE + replace compliance_record_warnings join (dedup); GetProducts decodes JSON tags, NULL scalars->nil (C4). Tests PASS: TestClassify_SingleCondition (16 subtests tag/category/material/origin match+no-match+C4), TestClassify_NoMatch_NeedsReview, TestClassify_Match_RecordsAudit, TestClassify_Precedence_FirstMatchWins (lower priority + tie->lower id), TestClassify_Determinism (shuffled-input + repeat identical), TestClassify_Invariant_TerminalState (C2 property: every product exactly one valid terminal state), TestApplyRuleset_BasicInference, TestApplyRuleset_OverrideSurvivesRerun (C3), TestSetAndClearOverride (C3 both directions), TestApplyRuleset_Idempotent (C6); DB-backed (real MySQL:3308): TestRepo_GetProducts_ParsesJSON, TestRepo_SaveAndGetRecord (upsert no-dup + audit), TestRepo_DeleteRecord, TestRepo_GetRecord_Absent. Security: injection guard test seeds warning text `Choking hazard'); DROP TABLE entity;--` and asserts entity table survives a round-trip (parameterized queries, no interpolation) — ready for security-reviewer. Fixed cross-package test-isolation race (migrate round-trip DOWN dropped tables while repository suite read them under parallel `go test ./...`): added a shared MySQL GET_LOCK('gpsr_schema_test_lock') held per DB test in both internal/migrate/migrate_db_test.go and internal/repository/compliance_db_test.go — full suite now deterministically GREEN 8/8 with clean test cache and no `-p 1` flag (root-cause fix, init.sh untouched). Published engine API + record shape: _workspace/F2_backend_engine.md. Files: backend/internal/model/gpsr.go, internal/service/{engine,classifier}.go (+_test), internal/repository/{compliance,compliance_contract_test,compliance_db_test}.go. [FOLLOW-UP FIX 2026-06-28 — false-green DB tier (F2 independent QA F-1 / security Item 5, MEDIUM, both flagged same issue): ROOT CAUSE — repository + migrate DB tests called t.Skipf on any connection/auth failure, so a bare `cd backend && go test ./...` (config.Load() defaults DB_PASSWORD='' when .env isn't exported) connect-failed -> SKIPPED the entire DB tier incl. the SQL-injection guard (TestRepo_SaveAndGetRecord) yet still printed `ok`/exit 0 — false-green. REPRODUCED: `go clean -testcache && DB_PORT=19999 go test -v ./internal/repository/` -> all 4 DB tests --- SKIP but `ok ... 0.004s` exit 0. MECHANISM CHOSEN — explicit opt-in env var GPSR_DB_TESTS=1 (over a build tag, because it needs no recompile, is trivial for CI/init.sh to set inline, and keeps one binary). New shared helper internal/dbtest/dbtest.go (SkipOrFail): when GPSR_DB_TESTS set, an unreachable/misconfigured DB calls t.Fatalf (DB tier guaranteed to run); when unset, t.Skipf (offline local-dev stays portable). Applied consistently to BOTH internal/repository/compliance_db_test.go and internal/migrate/migrate_db_test.go (the two skip sites in each openTestDB). init.sh now runs the DB test step as `GPSR_DB_TESTS=1 go test ./...` when docker-compose (and thus MySQL:3308) is up, and plain `go test ./...` only on the no-DB offline path. GET_LOCK('gpsr_schema_test_lock') isolation fix kept intact; no assertion weakened. VERIFIED (verbatim): (1) guard OFF + DB_PORT=19999 -> 5 DB tests SKIP, both pkgs `ok`, exit 0 (acceptable offline). (2) GPSR_DB_TESTS=1 + .env loaded -> TestRepo_SaveAndGetRecord PASS 0.03s + TestUpDownRoundTrip PASS 0.29s (RUN, no SKIP — injection guard executed). (3) GPSR_DB_TESTS=1 + DB_PASSWORD=wrong_password -> both --- FAIL with 'DB-backed tests required (GPSR_DB_TESTS=1) but database unusable: ... Error 1045 (28000): Access denied', exit code 1 — false-green closed. (4) `bash init.sh` -> HARNESS XANH (exit 0) with `[ok] go test (DB tier required: GPSR_DB_TESTS=1)` and real DB-tier exec `ok ... internal/migrate 0.297s`, `ok ... internal/repository 0.359s` (vs ~0.003s skip times). New files: backend/internal/dbtest/dbtest.go. Modified: backend/internal/repository/compliance_db_test.go, backend/internal/migrate/migrate_db_test.go, init.sh.]"
+    },
+    {
+      "id": "F3",
+      "name": "Shopify per-shop auth + install (OAuth)",
+      "description": "Multi-tenant install flow: migration for `shop` table (shop_domain, access_token, scope, installed_at). GET /auth?shop=... -> Shopify OAuth -> /auth/callback stores per-shop token. App Bridge session-token (JWT) middleware verifies every admin API request and resolves the calling shop. Backend listens on port 8000 (matches nginx). Minimal redirect URLs documented for shopify.app.toml (built in F9).",
+      "dependencies": [
+        "F2"
+      ],
+      "status": "done",
+      "evidence": "FULL init.sh GREEN (exit 0): 'HARNESS XANH — verify chain passed.' with DB tier (MySQL:3308 healthy, migration 002 shop table applied, GPSR_DB_TESTS=1). TDD (RED-first, verified): wrote handler/service tests before code; security fixes also TDD (saw empty-secret tests FAIL with 'accepted a token forged with an EMPTY secret; auth is forgeable', then PASS after fix). Files: backend/migrations/002_shop.{up,down}.sql (shop: id, shop_domain UNIQUE, access_token, scope, installed_at), internal/model/shop.go (access_token json:\"-\"), internal/repository/shop.go (parameterized Upsert/GetByDomain), internal/service/shopify_auth.go (HMAC verify, signed state, JWT verify), internal/service/token_exchange.go, internal/handler/{auth,session}.go, cmd/server/main.go (wires OAuth + session-token mw, port 8000). FLOW: GET /auth?shop=... validates shop domain (strict regex, no open redirect) -> redirect to Shopify consent with crypto/rand 256-bit signed-state HttpOnly/Secure/Lax cookie; GET /auth/callback verifies HMAC (constant-time hmac.Equal) + state (constant-time) BEFORE code exchange -> exchanges code -> Upserts per-shop token; /api/* protected by RequireSessionToken mw that verifies App Bridge JWT (alg pinned HS256, sig before payload, aud=apiKey, exp/nbf) and loads the installed shop row (uninstalled -> 401). Tests PASS (go test ./internal/service/ ./internal/handler/ ./internal/config/ -v, all green, no skip): TestAuthBegin_RedirectsToShopify, TestAuthBegin_RejectsBadShop_NoOpenRedirect, TestAuthCallback_Success_StoresTokenAndRedirects, TestAuthCallback_TamperedHMAC_Rejected, TestAuthCallback_StateMismatch_Rejected, TestAuthCallback_MissingStateCookie_Rejected, TestAuthCallback_ExchangeFails_502, TestApiMe_ValidToken_ReturnsShop, TestApiMe_Rejects, TestApiMe_UninstalledShop_Rejected, TestValidateShopDomain (16 assertions incl userinfo @-trick, suffix-substring, path traversal, scheme prefix, embedded newline, null byte), TestVerifyQueryHMAC, TestStateNonce, TestVerifySessionToken (alg=none/bad-sig/wrong-aud/expired/nbf-future/non-myshopify-dest). DB-backed: shop repository round-trip via init.sh DB tier. SECURITY GATE — independent security-reviewer (separate from doer): first pass FAIL on F3-SEC-1 (HIGH) — auth fully forgeable when SHOPIFY_API_SECRET empty, no fail-closed boot check; reviewer REPRODUCED VerifySessionToken(forgedJWT,\"\",key)=accepted=true. FIX (TDD, backend-engineer): config.Validate() refuses empty/whitespace SHOPIFY_API_SECRET/API_KEY/APP_URL (strings.TrimSpace), called in cmd/server/main.go before serving with log.Fatalf (server-only; migrate NOT gated, runs on DB creds alone); defense-in-depth empty-secret guards in VerifySessionToken/VerifyQueryHMAC/VerifyState; gin.LoggerWithConfig formatter strips query string so OAuth code/hmac no longer logged (F3-SEC-2); BACKEND_PORT default drift 8080->8000 fixed. RE-VERIFY independent security-reviewer: VERDICT PASS — re-ran the original forgery, now REJECTED ('refusing to verify: empty app secret') at both primitive and boot; legit signature still accepted, wrong secret still rejected (no regression); full original security suite green. Reports: _workspace/F3_backend_auth.md (contract), _workspace/F3_security_auth.md (FAIL->detail). Follow-up non-blockers: F3-SEC-3 token-at-rest encryption (phase 2). Real OAuth callback from Shopify servers requires a publicly reachable SHOPIFY_APP_URL (gpsr.quotesnap.local is local-only) — a tunnel/deploy concern for F9, not a code defect."
+    },
+    {
+      "id": "F3b",
+      "name": "Backend API (Gin) + Shopify sync",
+      "description": "Per-shop product read sync (Admin API) + webhook on product create/update into local mirror (idempotent upsert, C7). Endpoints for products+status, rules CRUD, entity/template library, bulk apply-ruleset. All requests scoped to the authenticated shop. Published JSON shapes (snake_case).",
+      "dependencies": [
+        "F3"
+      ],
+      "status": "in-progress",
+      "evidence": ""
+    },
+    {
+      "id": "F4",
+      "name": "Admin: entity + warning-template library",
+      "description": "React screens to manage responsible operators and warning templates (the data rules reference by id). Embedded via App Bridge; calls the shop-scoped API.",
+      "dependencies": [
+        "F3b"
+      ],
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "F5",
+      "name": "Admin: classification rules config",
+      "description": "Ordered rules list with visible precedence + editing.",
+      "dependencies": [
+        "F3b"
+      ],
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "F6",
+      "name": "Admin: bulk product editor + compliance status",
+      "description": "Product table with status; bulk apply-ruleset / override / mark reviewed; per-item result.",
+      "dependencies": [
+        "F4",
+        "F5"
+      ],
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "F7",
+      "name": "Theme extension: storefront safety block",
+      "description": "Renders mapped warnings + responsible entity on the product page. High risk: E2E + human approval.",
+      "dependencies": [
+        "F6"
+      ],
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "F8",
+      "name": "Security hardening pass",
+      "description": "settings.json deny rules + PreToolUse hook verified; storefront output escaping; injection review of merchant input.",
+      "dependencies": [
+        "F7"
+      ],
+      "status": "pending",
+      "evidence": ""
+    },
+    {
+      "id": "F9",
+      "name": "Deploy config: shopify.app.toml + nginx + README",
+      "description": "Fill root shopify.app.toml (app name, client_id, application_url, redirect_urls matching F3 auth callback, scopes read_products/write_products, webhooks for product create/update) and the storefront/ theme app extension config; push via Shopify CLI. nginx site conf in deploy/nginx/ for one domain (e.g. gpsr.quotesnap.local): location / -> frontend FE dist, location /api -> backend Go on 127.0.0.1:8000, reusing the existing SSL + CORS/OPTIONS-preflight pattern. deploy/README.md with build+deploy steps. Verify nginx config syntax (nginx -t).",
+      "dependencies": [
+        "F7"
+      ],
+      "status": "pending",
+      "evidence": ""
+    }
+  ]
+}

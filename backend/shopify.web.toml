@@ -1,0 +1,26 @@
+# Shopify CLI web process config for the Go + Gin backend.
+# `shopify app dev` starts this process and proxies the public tunnel to it.
+#
+# The CLI provides these env vars to the process (see shopify.dev app-structure):
+#   SHOPIFY_API_KEY, SHOPIFY_API_SECRET, HOST/APP_URL (tunnel URL),
+#   BACKEND_PORT/PORT (port to listen on), SCOPES.
+# config.Load() reads APP_URL/HOST for the OAuth redirect_uri and PORT/BACKEND_PORT
+# for the listen port, so it matches the tunnel the CLI registers with Partners.
+#
+# roles=["backend"]. There is NO Node package.json here (Go module), so the CLI's
+# automatic dependency install is a no-op build command — this avoids the
+# "unknown install / ENOENT" error from the CLI guessing a package manager.
+
+roles = ["backend"]
+
+# Tell the CLI which port the Go server listens on (matches config default 8000).
+port = 8000
+
+# Our OAuth callback path (the CLI registers <tunnel> + this as a redirect URL).
+auth_callback_path = "/auth/callback"
+
+[commands]
+# No Node deps to install/build for a Go backend — keep build a no-op so the CLI
+# does not try to spawn an unknown package-manager install.
+build = "true"
+dev = "go run ./cmd/server"
