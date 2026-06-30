@@ -3,21 +3,31 @@
  *
  * Shell responsibilities:
  *  - Wrap the app in Polaris AppProvider (CSS + en translations)
- *  - Wrap in Polaris Frame with Navigation for the app nav
+ *  - Render <ui-nav-menu> so App Bridge lifts navigation into the Shopify
+ *    Admin left sidebar (OUTSIDE the iframe — the correct embedded-app pattern)
  *  - Provide client-side routing via React Router
- *  - Route: /entities → EntityLibraryScreen (F4)
+ *  - Route: /products  → ProductsScreen (F6)
+ *  - Route: /entities  → EntityLibraryScreen (F4)
  *  - Route: /warning-templates → WarningTemplateLibraryScreen (F4)
- *  - Route: /rules → placeholder (slot for F5's RulesScreen)
- *  - Default route → redirect to /entities
+ *  - Route: /rules     → RulesScreen (F5)
+ *  - Default route → redirect to /products
+ *
+ * Nav architecture note:
+ *   Embedded apps MUST NOT render a navigation menu inside the iframe via
+ *   Polaris Frame+Navigation — that creates a duplicate in-iframe menu that
+ *   does not sync with Shopify's URL bar.  Instead, <ui-nav-menu> is a
+ *   custom element provided by the CDN App Bridge script (loaded in
+ *   index.html).  App Bridge detects it and hoists the <a> links into the
+ *   Shopify Admin sidebar chrome automatically.
  *
  * Shared files F5 also uses: App.tsx (AppProvider wraps F5's RulesScreen),
  * src/api/client.ts (shared fetch wrapper), src/api/types.ts (shared types).
- * F5 should NOT modify App.tsx's AppProvider setup or the navigation shell —
- * only add new <Route> entries for rules.
+ * F5 should NOT modify App.tsx's AppProvider setup — only add new <Route>
+ * entries for rules.
  */
 
 import "@shopify/polaris/build/esm/styles.css";
-import { AppProvider, Frame, Navigation } from "@shopify/polaris";
+import { AppProvider } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import {
   BrowserRouter,
@@ -25,8 +35,26 @@ import {
   Route,
   Navigate,
   useLocation,
-  useNavigate,
 } from "react-router-dom";
+
+// ---------------------------------------------------------------------------
+// TypeScript: declare the ui-nav-menu custom element so JSX is valid.
+// The element is provided at runtime by the CDN App Bridge script; we only
+// need the type declaration so the TypeScript compiler accepts the JSX tag.
+// ---------------------------------------------------------------------------
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      // Minimal declaration — App Bridge renders the element; we only set
+      // standard HTML attributes (children, className, id, etc.).
+      "ui-nav-menu": React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Root redirect — preserves Shopify's host/shop/embedded query params so that
@@ -61,40 +89,26 @@ import { RulesScreen } from "./screens/RulesScreen";
 import { ProductsScreen } from "./screens/ProductsScreen";
 
 // ---------------------------------------------------------------------------
-// Navigation shell (Polaris Frame + Navigation)
+// Embedded-app sidebar nav via App Bridge web component
+//
+// <ui-nav-menu> is provided by the CDN App Bridge script (index.html).
+// App Bridge lifts these <a> links into the Shopify Admin left sidebar
+// (outside the iframe).  rel="home" marks the primary / home route.
+//
+// Clicking a link triggers a same-page navigation to the href — React Router's
+// BrowserRouter intercepts it as a client-side navigation (no full reload).
 // ---------------------------------------------------------------------------
 
-const NAV_ITEMS = [
-  { label: "Products", path: "/products" },
-  { label: "Entities", path: "/entities" },
-  { label: "Warning Templates", path: "/warning-templates" },
-  { label: "Rules", path: "/rules" },
-] as const;
-
-function AppNavigation() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
+function AppNavMenu() {
   return (
-    <Navigation location={location.pathname}>
-      <Navigation.Section
-        title="GPSR Compliance"
-        items={NAV_ITEMS.map(({ label, path }) => ({
-          label,
-          selected: location.pathname.startsWith(path),
-          // NOTE: intentionally NO `url` prop. With `url` set, Polaris renders an
-          // <a href={url}> and a click makes the browser FOLLOW the href — a full
-          // page reload inside the Shopify iframe that re-bootstraps App Bridge
-          // every time (the menu "flicker"). Using onClick-only keeps navigation
-          // purely client-side via React Router (no reload, no flicker).
-          onClick: () => {
-            if (location.pathname !== path) {
-              navigate(path);
-            }
-          },
-        }))}
-      />
-    </Navigation>
+    <ui-nav-menu>
+      <a href="/products" rel="home">
+        Products
+      </a>
+      <a href="/entities">Entities</a>
+      <a href="/warning-templates">Warning Templates</a>
+      <a href="/rules">Rules</a>
+    </ui-nav-menu>
   );
 }
 
@@ -103,29 +117,25 @@ function AppNavigation() {
 // ---------------------------------------------------------------------------
 
 export function App() {
-  const logo = {
-    width: 124,
-    topBarSource: "",
-    contextualSaveBarSource: "",
-    url: "/",
-    label: "GPSR",
-  };
-
   return (
     <AppProvider i18n={enTranslations}>
       <BrowserRouter>
-        <Frame logo={logo} navigation={<AppNavigation />}>
-          <Routes>
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/products" element={<ProductsScreen />} />
-            <Route path="/entities" element={<EntityLibraryScreen />} />
-            <Route
-              path="/warning-templates"
-              element={<WarningTemplateLibraryScreen />}
-            />
-            <Route path="/rules" element={<RulesScreen />} />
-          </Routes>
-        </Frame>
+        {/*
+          AppNavMenu renders outside <Routes> so it is always present in the
+          DOM regardless of which route is active.  App Bridge reads it once
+          during bootstrap; subsequent re-renders do not affect the sidebar.
+        */}
+        <AppNavMenu />
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/products" element={<ProductsScreen />} />
+          <Route path="/entities" element={<EntityLibraryScreen />} />
+          <Route
+            path="/warning-templates"
+            element={<WarningTemplateLibraryScreen />}
+          />
+          <Route path="/rules" element={<RulesScreen />} />
+        </Routes>
       </BrowserRouter>
     </AppProvider>
   );

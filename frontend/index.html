@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GPSR Compliance Engine — Admin</title>
+    <!--
+      Shopify App Bridge (CDN build) — MUST load before the app script.
+      Provides:
+        - Web components: <ui-nav-menu>, <ui-title-bar> (lifted into the
+          Shopify Admin chrome, outside the iframe).
+        - Global shopify.idToken() / shopify.config for CDN-style token access.
+      Auto-initialises from the shopify-api-key meta tag + the ?host= URL param
+      that Shopify injects when it opens the embedded iframe.
+
+      Session-token acquisition still uses the npm @shopify/app-bridge package
+      (createApp + getSessionToken in src/lib/appBridge.ts + src/api/client.ts).
+      Both bridges coexist without conflict because they reference the same
+      apiKey and host values.
+    -->
+    <meta name="shopify-api-key" content="9dd02bd0f4a1c7f2286123e9800d896e" />
+    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
   </head>
   <body>
     <div id="root"></div>
